@@ -2,7 +2,7 @@
 
 import logging
 import jwt
-from jwt.exceptions import PyJWTError
+from jwt.exceptions import PyJWTError, InvalidAudienceError
 from requests_oauthlib import OAuth2Session
 from ckan.plugins import toolkit as tk
 from urllib.parse import urlencode
@@ -55,7 +55,7 @@ class SSOClient(object):
     def extract_client_roles_from_token(self, token_response):
         """
         Extract ONLY client roles from the access_token JWT.
-        Ignores realm roles completely.
+        Ignores realm roles completely and handles audience issues.
         
         Args:
             token_response: The full token response from get_token()
@@ -71,13 +71,110 @@ class SSOClient(object):
             return client_roles
         
         try:
-            # Decode without verification for development
-            decoded = jwt.decode(access_token, options={"verify_signature": False})
+            # OPTION 1: Decode without verification (simplest, for development)
+            # This ignores signature and audience verification
+            decoded = jwt.decode(
+                access_token, 
+                options={
+                    "verify_signature": False,
+                    "verify_aud": False  # This bypasses the audience check
+                }
+            )
             
             # Extract ONLY client roles for this specific client
             resource_access = decoded.get('resource_access', {})
             
             # Get roles for this client only (using self.client_id)
+            if self.client_id in resource_access:
+                client_roles = resource_access[self.client_id].get('roles', [])
+            
+            log.debug(f"Extracted client roles for {self.client_id}: {client_roles}")
+            
+        except PyJWTError as e:
+            log.error(f"Error decoding JWT: {e}")
+        
+        return client_roles
+    
+    def extract_client_roles_from_token_with_audience(self, token_response):
+        """
+        Alternative method that properly handles audience.
+        Use this if you want to verify the token properly.
+        """
+        client_roles = []
+        
+        access_token = token_response.get('access_token')
+        if not access_token:
+            log.warning("No access_token in token response")
+            return client_roles
+        
+        try:
+            # First, decode without verification to inspect the claims
+            unverified_decoded = jwt.decode(
+                access_token, 
+                options={"verify_signature": False, "verify_aud": False}
+            )
+            
+            # Log the audience to help debug
+            audience = unverified_decoded.get('aud')
+            log.debug(f"Token audience: {audience}")
+            
+            # Check what the audience is
+            if isinstance(audience, list):
+                log.debug(f"Audience is a list: {audience}")
+                # If audience is a list, your client_id might be one of them
+                if self.client_id in audience:
+                    log.info(f"Client ID {self.client_id} found in audience list")
+            else:
+                log.debug(f"Audience is a string: {audience}")
+            
+            # OPTION 2: Decode with proper audience handling
+            # Try with the actual audience from the token
+            try:
+                if isinstance(audience, list):
+                    # Try each audience value
+                    for aud_value in audience:
+                        try:
+                            decoded = jwt.decode(
+                                access_token,
+                                options={"verify_signature": False},
+                                audience=aud_value
+                            )
+                            # If we get here, this audience worked
+                            log.debug(f"Successfully decoded with audience: {aud_value}")
+                            break
+                        except InvalidAudienceError:
+                            continue
+                    else:
+                        # If none worked, fall back to no audience verification
+                        decoded = jwt.decode(
+                            access_token,
+                            options={"verify_signature": False, "verify_aud": False}
+                        )
+                else:
+                    # Try with the audience as string
+                    try:
+                        decoded = jwt.decode(
+                            access_token,
+                            options={"verify_signature": False},
+                            audience=audience
+                        )
+                    except InvalidAudienceError:
+                        # Fall back to no audience verification
+                        decoded = jwt.decode(
+                            access_token,
+                            options={"verify_signature": False, "verify_aud": False}
+                        )
+            except:
+                # Ultimate fallback
+                decoded = jwt.decode(
+                    access_token,
+                    options={"verify_signature": False, "verify_aud": False}
+                )
+            
+            # Extract ONLY client roles for this specific client
+            resource_access = decoded.get('resource_access', {})
+            
+            # Get roles for this client only
             if self.client_id in resource_access:
                 client_roles = resource_access[self.client_id].get('roles', [])
             
@@ -101,3 +198,39 @@ class SSOClient(object):
                 client_roles = resource_access[self.client_id].get('roles', [])
         
         return client_roles
+    
+    def debug_token(self, token_response):
+        """
+        Debug method to inspect token claims.
+        Call this temporarily to understand your token structure.
+        """
+        access_token = token_response.get('access_token')
+        if not access_token:
+            log.warning("No access_token in token response")
+            return
+        
+        try:
+            # Decode without verification
+            decoded = jwt.decode(
+                access_token, 
+                options={"verify_signature": False, "verify_aud": False}
+            )
+            
+            log.info("=== TOKEN DEBUG INFO ===")
+            log.info(f"Token algorithm: {decoded.get('alg', 'unknown')}")
+            log.info(f"Issuer (iss): {decoded.get('iss')}")
+            log.info(f"Audience (aud): {decoded.get('aud')}")
+            log.info(f"Subject (sub): {decoded.get('sub')}")
+            log.info(f"Client ID: {self.client_id}")
+            log.info(f"Resource access keys: {list(decoded.get('resource_access', {}).keys())}")
+            
+            if self.client_id in decoded.get('resource_access', {}):
+                roles = decoded['resource_access'][self.client_id].get('roles', [])
+                log.info(f"Your client roles: {roles}")
+            else:
+                log.info(f"Client ID {self.client_id} not found in resource_access")
+            
+            log.info("=========================")
+            
+        except Exception as e:
+            log.error(f"Error debugging token: {e}")

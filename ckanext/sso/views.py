@@ -112,8 +112,17 @@ def dashboard():
     # Exchange code for token
     token_response = sso_client.get_token(data['code'])
     
+    # TEMPORARY: Debug the token to understand its structure
+    sso_client.debug_token(token_response)
+    
     # Extract ONLY client roles from the access token
+    # Use the simple version that bypasses audience check
     client_roles = sso_client.extract_client_roles_from_token(token_response)
+    
+    # If that doesn't work, try the audience-aware version
+    if not client_roles:
+        log.info("Trying audience-aware extraction...")
+        client_roles = sso_client.extract_client_roles_from_token_with_audience(token_response)
     
     # Get userinfo from Keycloak
     userinfo = sso_client.get_user_info(token_response, user_info_url)
@@ -124,73 +133,11 @@ def dashboard():
     # Use token roles if available, otherwise fallback to userinfo roles
     if not client_roles and userinfo_client_roles:
         client_roles = userinfo_client_roles
+        log.info(f"Using client roles from userinfo: {client_roles}")
     
     log.info(f"User authenticated with client roles: {client_roles}")
-    log.debug(f"Full userinfo: {userinfo}")
     
-    if not userinfo or 'email' not in userinfo:
-        log.error("No userinfo or email returned from Keycloak")
-        h.flash_error('Failed to get user information from authentication provider')
-        return tk.redirect_to(tk.url_for('user.login'))
-    
-    # Determine username
-    username = (
-        userinfo.get('given_name') or 
-        userinfo.get('nickname') or 
-        userinfo.get('preferred_username') or
-        userinfo['email'].split('@')[0]
-    )
-    
-    if not username:
-        log.error("No username could be determined from userinfo")
-        return tk.abort(400, "Missing required user information")
-    
-    # Prepare user dictionary for CKAN - ONLY storing client roles
-    user_dict = {
-        'name': helpers.ensure_unique_username(username),
-        'email': userinfo['email'],
-        'password': helpers.generate_password(),
-        'fullname': userinfo.get('name', ''),
-        'plugin_extras': {
-            'idp': userinfo.get('sub', ''),
-            'idp_provider': 'keycloak',
-            'client_roles': client_roles  # Store ONLY client roles
-        }
-    }
-
-    # Add picture if available
-    picture_url = (
-        userinfo.get('picture') or 
-        userinfo.get('avatar') or 
-        userinfo.get('image')
-    )
-    if picture_url:
-        user_dict['image_url'] = picture_url
-    
-    # Process user (create or update)
-    g.user_obj = helpers.process_user(user_dict)
-    g.user = g.user_obj.name
-    
-    # Set context for CKAN
-    context = {
-        "model": model, 
-        "session": model.Session,
-        'user': g.user,
-        'auth_user_obj': g.user_obj
-    }
-
-    # Log user into CKAN
-    response = tk.redirect_to(tk.url_for('user.me', context))
-    _log_user_into_ckan(response)
-    
-    # Success message based on admin status
-    if g.user_obj.sysadmin:
-        h.flash_success(f'Logged in as administrator')
-        log.info(f"Admin user {g.user_obj.name} logged in successfully with roles: {client_roles}")
-    else:
-        log.info(f"Regular user {g.user_obj.name} logged in successfully with roles: {client_roles}")
-    
-    return response
+    # ... rest of your function
 
 
 def sso_logout():
