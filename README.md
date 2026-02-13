@@ -1,4 +1,4 @@
-## 🚨🚨 In this forked version of ckanext-sso-dathere, we will allow Keycloak users to manage CKAN administrators directly within Keycloak 🚨🚨
+## 🚨🚨 In this forked version of ckanext-sso-dathere, we will allow Keycloak users to manage CKAN administrators directly within Keycloak!!!! 🚨🚨
 
 
 
