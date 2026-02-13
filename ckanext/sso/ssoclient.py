@@ -52,47 +52,47 @@ class SSOClient(object):
         user_info = oauth.get(user_info_url)
         return user_info.json()
     
-def extract_client_roles_from_token(self, token_response):
-    """
-    Extract ONLY client roles from the access_token JWT.
+    def extract_client_roles_from_token(self, token_response):
+        """
+        Extract ONLY client roles from the access_token JWT.
 
-    Args:
-        token_response: The full token response from get_token()
-    
-    Returns:
-        list: Client roles for this specific client
-    """
-    client_roles = []
-    
-    access_token = token_response.get('access_token')
-    if not access_token:
-        log.warning("No access_token in token response")
+        Args:
+            token_response: The full token response from get_token()
+        
+        Returns:
+            list: Client roles for this specific client
+        """
+        client_roles = []
+        
+        access_token = token_response.get('access_token')
+        if not access_token:
+            log.warning("No access_token in token response")
+            return client_roles
+        
+        try:
+            # Decode without verification (audience is 'account' but we don't need to verify)
+            decoded = jwt.decode(
+                access_token, 
+                options={
+                    "verify_signature": False,
+                    "verify_aud": False  # Skip audience verification
+                }
+            )
+            
+            # Extract ONLY client roles for this specific client
+            resource_access = decoded.get('resource_access', {})
+            
+            # Get roles for this client only (using self.client_id)
+            if self.client_id in resource_access:
+                client_roles = resource_access[self.client_id].get('roles', [])
+            
+            log.debug(f"Extracted client roles for {self.client_id}: {client_roles}")
+            
+        except PyJWTError as e:
+            log.error(f"Error decoding JWT: {e}")
+        
         return client_roles
-    
-    try:
-        # Decode without verification (audience is 'account' but we don't need to verify)
-        decoded = jwt.decode(
-            access_token, 
-            options={
-                "verify_signature": False,
-                "verify_aud": False  # Skip audience verification
-            }
-        )
         
-        # Extract ONLY client roles for this specific client
-        resource_access = decoded.get('resource_access', {})
-        
-        # Get roles for this client only (using self.client_id)
-        if self.client_id in resource_access:
-            client_roles = resource_access[self.client_id].get('roles', [])
-        
-        log.debug(f"Extracted client roles for {self.client_id}: {client_roles}")
-        
-    except PyJWTError as e:
-        log.error(f"Error decoding JWT: {e}")
-    
-    return client_roles
-    
     def extract_client_roles_from_token_with_audience(self, token_response):
         """
         Alternative method that properly handles audience.
