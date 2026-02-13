@@ -23,8 +23,8 @@ class SSOPlugin(plugins.SingletonPlugin):
     def get_helpers(self):
         return {
             'check_default_login': helpers.check_default_login,
-            'user_has_role': helpers.user_has_role,
-            'get_user_roles': helpers.get_user_roles,
+            'user_has_client_role': helpers.user_has_client_role,
+            'get_user_client_roles': helpers.get_user_client_roles,
         }
 
     # IConfigurer

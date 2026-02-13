@@ -52,73 +52,52 @@ class SSOClient(object):
         user_info = oauth.get(user_info_url)
         return user_info.json()
     
-    def extract_roles_from_token(self, token_response):
+    def extract_client_roles_from_token(self, token_response):
         """
-        Extract roles from the access_token JWT.
+        Extract ONLY client roles from the access_token JWT.
+        Ignores realm roles completely.
         
         Args:
             token_response: The full token response from get_token()
             
         Returns:
-            dict: Contains realm_roles and client_roles
+            list: Client roles for this specific client
         """
-        result = {
-            'realm_roles': [],
-            'client_roles': []
-        }
+        client_roles = []
         
         access_token = token_response.get('access_token')
         if not access_token:
             log.warning("No access_token in token response")
-            return result
+            return client_roles
         
         try:
             # Decode without verification for development
-            # WARNING: For production, you should verify the signature!
             decoded = jwt.decode(access_token, options={"verify_signature": False})
             
-            # Extract realm roles
-            realm_access = decoded.get('realm_access', {})
-            result['realm_roles'] = realm_access.get('roles', [])
-            
-            # Extract client roles for your specific client
+            # Extract ONLY client roles for this specific client
             resource_access = decoded.get('resource_access', {})
+            
+            # Get roles for this client only (using self.client_id)
             if self.client_id in resource_access:
-                result['client_roles'] = resource_access[self.client_id].get('roles', [])
+                client_roles = resource_access[self.client_id].get('roles', [])
             
-            # Also store all client roles for reference
-            result['all_client_roles'] = {}
-            for client_name, client_data in resource_access.items():
-                result['all_client_roles'][client_name] = client_data.get('roles', [])
-            
-            log.debug(f"Extracted realm roles: {result['realm_roles']}")
-            log.debug(f"Extracted client roles: {result['client_roles']}")
+            log.debug(f"Extracted client roles for {self.client_id}: {client_roles}")
             
         except PyJWTError as e:
             log.error(f"Error decoding JWT: {e}")
         
-        return result
+        return client_roles
     
-    def extract_roles_from_userinfo(self, user_info):
+    def extract_client_roles_from_userinfo(self, user_info):
         """
-        Extract roles from userinfo response if Keycloak is configured to include them.
+        Extract client roles from userinfo response if available.
         """
-        result = {
-            'realm_roles': [],
-            'client_roles': []
-        }
+        client_roles = []
         
-        # Check common places where roles might appear in userinfo
-        if 'realm_access' in user_info:
-            result['realm_roles'] = user_info['realm_access'].get('roles', [])
-        
+        # Check if roles are in userinfo
         if 'resource_access' in user_info:
             resource_access = user_info['resource_access']
             if self.client_id in resource_access:
-                result['client_roles'] = resource_access[self.client_id].get('roles', [])
+                client_roles = resource_access[self.client_id].get('roles', [])
         
-        # Some Keycloak versions put roles directly in 'roles' field
-        if 'roles' in user_info:
-            result['realm_roles'] = user_info['roles']
-        
-        return result
+        return client_roles

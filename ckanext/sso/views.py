@@ -112,20 +112,20 @@ def dashboard():
     # Exchange code for token
     token_response = sso_client.get_token(data['code'])
     
-    # Extract roles from the access token
-    roles = sso_client.extract_roles_from_token(token_response)
+    # Extract ONLY client roles from the access token
+    client_roles = sso_client.extract_client_roles_from_token(token_response)
     
     # Get userinfo from Keycloak
     userinfo = sso_client.get_user_info(token_response, user_info_url)
     
-    # Also try to get roles from userinfo (as backup)
-    userinfo_roles = sso_client.extract_roles_from_userinfo(userinfo)
+    # Also try to get client roles from userinfo (as backup)
+    userinfo_client_roles = sso_client.extract_client_roles_from_userinfo(userinfo)
     
-    # Merge roles (prioritize token roles as they're more reliable)
-    realm_roles = roles.get('realm_roles', []) or userinfo_roles.get('realm_roles', [])
-    client_roles = roles.get('client_roles', []) or userinfo_roles.get('client_roles', [])
+    # Use token roles if available, otherwise fallback to userinfo roles
+    if not client_roles and userinfo_client_roles:
+        client_roles = userinfo_client_roles
     
-    log.info(f"User authenticated with roles - Realm: {realm_roles}, Client: {client_roles}")
+    log.info(f"User authenticated with client roles: {client_roles}")
     log.debug(f"Full userinfo: {userinfo}")
     
     if not userinfo or 'email' not in userinfo:
@@ -145,7 +145,7 @@ def dashboard():
         log.error("No username could be determined from userinfo")
         return tk.abort(400, "Missing required user information")
     
-    # Prepare user dictionary for CKAN
+    # Prepare user dictionary for CKAN - ONLY storing client roles
     user_dict = {
         'name': helpers.ensure_unique_username(username),
         'email': userinfo['email'],
@@ -154,10 +154,7 @@ def dashboard():
         'plugin_extras': {
             'idp': userinfo.get('sub', ''),
             'idp_provider': 'keycloak',
-            'roles': {
-                'realm': realm_roles,
-                'client': client_roles
-            }
+            'client_roles': client_roles  # Store ONLY client roles
         }
     }
 
@@ -186,12 +183,12 @@ def dashboard():
     response = tk.redirect_to(tk.url_for('user.me', context))
     _log_user_into_ckan(response)
     
-    # Success message
+    # Success message based on admin status
     if g.user_obj.sysadmin:
         h.flash_success(f'Logged in as administrator')
-        log.info(f"Admin user {g.user_obj.name} logged in successfully")
+        log.info(f"Admin user {g.user_obj.name} logged in successfully with roles: {client_roles}")
     else:
-        log.info(f"Regular user {g.user_obj.name} logged in successfully")
+        log.info(f"Regular user {g.user_obj.name} logged in successfully with roles: {client_roles}")
     
     return response
 
