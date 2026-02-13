@@ -10,20 +10,18 @@ from ckan.plugins import toolkit as tk
 import ckan.plugins as plugins
 from ckan.views.user import set_repoze_user, RequestResetView
 from ckan.common import (
-    _, config, g, request, current_user, logout_user, session, login_user
+    _, config, g, request, current_user, logout_user, session
 )
-
 
 from ckanext.sso.ssoclient import SSOClient
 import ckanext.sso.helpers as helpers
-
-g = tk.g
 
 log = logging.getLogger(__name__)
 
 blueprint = Blueprint('sso', __name__)
 
 
+# Load configuration
 authorization_endpoint = tk.config.get('ckanext.sso.authorization_endpoint')
 login_url = tk.config.get('ckanext.sso.login_url')
 client_id = tk.config.get('ckanext.sso.client_id')
@@ -36,14 +34,18 @@ user_info_url = tk.config.get('ckanext.sso.user_info')
 logout_url = tk.config.get('ckanext.sso.logout_url') 
 logout_redirect_url = tk.config.get('ckanext.sso.logout_redirect_url')
 
-sso_client = SSOClient(client_id=client_id, 
-                       client_secret=client_secret,
-                       authorize_url=authorization_endpoint,
-                       token_url=access_token_url,
-                       redirect_url=redirect_url,
-                       user_info_url=user_info_url,
-                       scope=scope,
-                       logout_url=logout_url)
+
+# Initialize SSO client
+sso_client = SSOClient(
+    client_id=client_id, 
+    client_secret=client_secret,
+    authorize_url=authorization_endpoint,
+    token_url=access_token_url,
+    redirect_url=redirect_url,
+    user_info_url=user_info_url,
+    scope=scope,
+    logout_url=logout_url
+)
 
 
 @blueprint.before_app_request
@@ -58,13 +60,11 @@ def before_app_request():
     
 
 def _log_user_into_ckan(resp):
-    """ Log the user into different CKAN versions.
-    CKAN 2.10 introduces flask-login and login_user method.
-    CKAN 2.9.6 added a security change and identifies the user
-    with the internal id plus a serial autoincrement (currently static).
-    CKAN <= 2.9.5 identifies the user only using the internal id.
-    """
+    """ Log the user into different CKAN versions."""
+    log.info("Logging user into CKAN")
+    
     if tk.check_ckan_version(min_version="2.10"):
+        from ckan.common import login_user
         login_user(g.user_obj)
         return
 
@@ -74,12 +74,12 @@ def _log_user_into_ckan(resp):
         user_id = tk.g.user
     set_repoze_user(user_id, resp)
 
-    log.info(u'User {0}<{1}> logged in successfully'.format(g.user_obj.name,
-                                                            g.user_obj.email))
+    log.info(u'User {0}<{1}> logged in successfully'.format(
+        g.user_obj.name, g.user_obj.email))
 
 
 def sso():
-    log.info("SSO Login")
+    log.info("SSO Login - Redirecting to Keycloak")
     auth_url = None
     try:
         auth_url = sso_client.get_authorize_url()
@@ -88,8 +88,9 @@ def sso():
         return tk.abort(500, "Error getting auth url: {}".format(e))
     return tk.redirect_to(auth_url)
 
+
 def sso_register():
-    log.info("SSO Register")
+    log.info("SSO Register - Redirecting to Keycloak")
     auth_url = None
     try:
         auth_url = sso_client.get_authorize_url()
@@ -100,58 +101,119 @@ def sso_register():
 
 
 def dashboard():
+    """Callback endpoint after Keycloak authentication."""
     data = tk.request.args
-    token = sso_client.get_token(data['code'])
-    userinfo = sso_client.get_user_info(token, user_info_url)
-    log.info("SSO Login: {}".format(userinfo))
-    if userinfo:
-        username = userinfo.get('given_name') or userinfo.get('nickname')
-        if not username:
-            log.error("No given_name or nickname provided by SSO")
-            return tk.abort(400, "Missing required user information")
-            
-        user_dict = {
-            'name': helpers.ensure_unique_username(username),
-            'email': userinfo['email'],
-            'password': helpers.generate_password(),
-            'fullname': userinfo['name'],
-            'plugin_extras': {
-                'idp': userinfo['sub']
-            }
-        }
-
-        picture_url = (userinfo.get('picture') or 
-                      userinfo.get('avatar') or 
-                      userinfo.get('image'))
-        if picture_url:
-            user_dict['image_url'] = picture_url
-        context = {"model": model, "session": model.Session}
-        g.user_obj = helpers.process_user(user_dict)
-        g.user = g.user_obj.name
-        context['user'] = g.user
-        context['auth_user_obj'] = g.user_obj
-
-        response = tk.redirect_to(tk.url_for('user.me', context))
-
-        _log_user_into_ckan(response)
-        log.info("Logged in success")
-        return response
-    else:
+    
+    if 'error' in data:
+        log.error(f"OAuth error: {data.get('error')} - {data.get('error_description')}")
+        h.flash_error('Authentication failed: ' + data.get('error_description', 'Unknown error'))
         return tk.redirect_to(tk.url_for('user.login'))
     
+    # Exchange code for token
+    token_response = sso_client.get_token(data['code'])
+    
+    # Extract roles from the access token
+    roles = sso_client.extract_roles_from_token(token_response)
+    
+    # Get userinfo from Keycloak
+    userinfo = sso_client.get_user_info(token_response, user_info_url)
+    
+    # Also try to get roles from userinfo (as backup)
+    userinfo_roles = sso_client.extract_roles_from_userinfo(userinfo)
+    
+    # Merge roles (prioritize token roles as they're more reliable)
+    realm_roles = roles.get('realm_roles', []) or userinfo_roles.get('realm_roles', [])
+    client_roles = roles.get('client_roles', []) or userinfo_roles.get('client_roles', [])
+    
+    log.info(f"User authenticated with roles - Realm: {realm_roles}, Client: {client_roles}")
+    log.debug(f"Full userinfo: {userinfo}")
+    
+    if not userinfo or 'email' not in userinfo:
+        log.error("No userinfo or email returned from Keycloak")
+        h.flash_error('Failed to get user information from authentication provider')
+        return tk.redirect_to(tk.url_for('user.login'))
+    
+    # Determine username
+    username = (
+        userinfo.get('given_name') or 
+        userinfo.get('nickname') or 
+        userinfo.get('preferred_username') or
+        userinfo['email'].split('@')[0]
+    )
+    
+    if not username:
+        log.error("No username could be determined from userinfo")
+        return tk.abort(400, "Missing required user information")
+    
+    # Prepare user dictionary for CKAN
+    user_dict = {
+        'name': helpers.ensure_unique_username(username),
+        'email': userinfo['email'],
+        'password': helpers.generate_password(),
+        'fullname': userinfo.get('name', ''),
+        'plugin_extras': {
+            'idp': userinfo.get('sub', ''),
+            'idp_provider': 'keycloak',
+            'roles': {
+                'realm': realm_roles,
+                'client': client_roles
+            }
+        }
+    }
+
+    # Add picture if available
+    picture_url = (
+        userinfo.get('picture') or 
+        userinfo.get('avatar') or 
+        userinfo.get('image')
+    )
+    if picture_url:
+        user_dict['image_url'] = picture_url
+    
+    # Process user (create or update)
+    g.user_obj = helpers.process_user(user_dict)
+    g.user = g.user_obj.name
+    
+    # Set context for CKAN
+    context = {
+        "model": model, 
+        "session": model.Session,
+        'user': g.user,
+        'auth_user_obj': g.user_obj
+    }
+
+    # Log user into CKAN
+    response = tk.redirect_to(tk.url_for('user.me', context))
+    _log_user_into_ckan(response)
+    
+    # Success message
+    if g.user_obj.sysadmin:
+        h.flash_success(f'Logged in as administrator')
+        log.info(f"Admin user {g.user_obj.name} logged in successfully")
+    else:
+        log.info(f"Regular user {g.user_obj.name} logged in successfully")
+    
+    return response
+
 
 def sso_logout():
+    """Handle logout from both CKAN and Keycloak."""
+    # Call IAuthenticator plugins
     for item in plugins.PluginImplementations(plugins.IAuthenticator):
         response = item.logout()
         if response:
             return response
-    user = current_user.name
+    
+    user = current_user.name if hasattr(current_user, 'name') else None
     if not user:
         return h.redirect_to('user.login')
 
     came_from = request.args.get('came_from', '')
+    
+    # Clear CKAN session
     logout_user()
-
+    
+    # Remove CSRF token
     field_name = config.get("WTF_CSRF_FIELD_NAME")
     if session.get(field_name):
         session.pop(field_name)
@@ -159,39 +221,44 @@ def sso_logout():
     if h.url_is_local(came_from):
         return h.redirect_to(str(came_from))
     
+    # Redirect to Keycloak logout
     logout_url = sso_client.get_logout_url(return_to=logout_redirect_url)
+    log.info(f"Redirecting to Keycloak logout: {logout_url}")
     return tk.redirect_to(logout_url)
 
 
-
 def reset_password():
+    """Override password reset to prevent SSO users from resetting."""
     email = tk.request.form.get('user', None)
+    
     if '@' not in email:
         log.info(f'User requested reset link for invalid email: {email}')
         h.flash_error('Invalid email address')
         return tk.redirect_to(tk.url_for('user.request_reset'))
-    user = model.User.by_email(email)
-    if not user:
-        log.info(u'User requested reset link for unknown user: {}'
-                 .format(email))
+    
+    user_list = model.User.by_email(email)
+    if not user_list:
+        log.info(f'User requested reset link for unknown user: {email}')
         return tk.redirect_to(tk.url_for('user.login'))
-    user_extras = user[0].plugin_extras
-    if user_extras and user_extras.get('idp', None) == 'google':
-        log.info(u'User requested reset link for google user: {}'
-                 .format(email))
-        h.flash_error('Invalid email address')
+    
+    user = user_list[0] if isinstance(user_list, list) else user_list
+    
+    # Check if user is from SSO
+    if user.plugin_extras and user.plugin_extras.get('idp_provider') == 'keycloak':
+        log.info(f'SSO user {user.name} attempted password reset')
+        h.flash_error('Password reset is not available for SSO users. Please use your identity provider.')
         return tk.redirect_to(tk.url_for('user.login'))
+    
     return RequestResetView().post()
 
 
+# Register routes
 blueprint.add_url_rule('/sso', view_func=sso)
 blueprint.add_url_rule('/sso_register', view_func=sso_register)
 blueprint.add_url_rule('/dashboard', view_func=dashboard)
 blueprint.add_url_rule('/sso_logout', view_func=sso_logout)
-blueprint.add_url_rule('/reset_password', view_func=reset_password,
-                       methods=['POST'])
+blueprint.add_url_rule('/reset_password', view_func=reset_password, methods=['POST'])
 
 
 def get_blueprint():
     return blueprint
-
