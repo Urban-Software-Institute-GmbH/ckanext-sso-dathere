@@ -1,3 +1,12 @@
+## Table of Contents
+
+1. [Introduction](#1-installation)
+2. [Features](#2-configuration)
+3. [Installation](#3-how-to-manage-ckan-admin-users-in-keycloak)
+
+
+
+
 # ckanext-sso
 
 ## 🚨🚨 In this forked version of ckanext-sso-dathere, we will allow Keycloak users to manage CKAN administrators directly within Keycloak using #Role Mapping!!!! 🚨🚨
@@ -30,7 +39,7 @@ To install the extension:
 
 - Add `sso` settings in CKAN config file
 
-## Configuration
+## 4. Configuration
 
 ``` ini
 
@@ -49,7 +58,7 @@ ckanext.sso.user_info = [user_info_url]
 ckanext.sso.disable_ckan_login = [True|False]
 ```
 
-## 4. Usage
+## 5. Usage
 
 After installing the extension and configuring the settings, you can now log in to CKAN using your SSO credentials.
 
@@ -57,16 +66,16 @@ After installing the extension and configuring the settings, you can now log in 
 
 Contributions are welcome! Please read our [contributing guide](CONTRIBUTING.md) to learn more.
 
-## 5. License
+## 6. License
 
 This project is licensed under the terms of the [MIT License](LICENSE).
 
-## 6. Contact
+## 7. Contact
 
 If you have any questions, please feel free to reach out to us at [
 datHere Support](mailto:<support@dathere.com>).
 
-## 7. Setup Keycloak
+## 8. Setup Keycloak
 
 As mentioned at the beginning. This plugin supoort just client-user role mapping. It was only tested on Keycloak version 26.0.0 and ckan 2.11.4 and worked very well
 
