@@ -20,20 +20,20 @@
 
 
 
-## 1. Introduction
+### 1. Introduction
 **ckanext-sso** is an extension for CKAN, a powerful data management system that makes data accessible and usable. This extension provides Single Sign-On (SSO) capabilities, allowing users to log in to CKAN using various SSO providers.
 
-## Tested on
+### Tested on
 - CKAN 2.9
 - CKAN 2.10
 
-## 2. Features
+### 2. Features
 
 * SSO Integration: Seamlessly integrate with popular SSO providers.
 * Easy Configuration: Simple setup to connect with your existing SSO system.
 * Enhanced Security: Leverage SSO for a secure authentication experience.
 
-## 3. Installation
+### 3. Installation
 
 To install the extension:
 
@@ -45,7 +45,7 @@ To install the extension:
 
 - Add `sso` settings in CKAN config file
 
-## 4. Configuration
+### 4. Configuration
 
 ``` ini
 
@@ -64,24 +64,24 @@ ckanext.sso.user_info = [user_info_url]
 ckanext.sso.disable_ckan_login = [True|False]
 ```
 
-## 5. Usage
+### 5. Usage
 
 After installing the extension and configuring the settings, you can now log in to CKAN using your SSO credentials.
 
-## 6. Contributing
+### 6. Contributing
 
 Contributions are welcome! Please read our [contributing guide](CONTRIBUTING.md) to learn more.
 
-## 7. License
+### 7. License
 
 This project is licensed under the terms of the [MIT License](LICENSE).
 
-## 8. Contact
+### 8. Contact
 
 If you have any questions, please feel free to reach out to us at [
 datHere Support](mailto:<support@dathere.com>).
 
-## 9. Setup Keycloak
+### 9. Setup Keycloak
 
 As mentioned at the beginning. This plugin supoort just client-user role mapping. It was only tested on Keycloak version 26.0.0 and ckan 2.11.4 and worked very well
 
