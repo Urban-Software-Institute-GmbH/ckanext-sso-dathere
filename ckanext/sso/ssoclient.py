@@ -30,12 +30,26 @@ class SSOClient(object):
         return authorization_url
 
     def get_logout_url(self, return_to=None):
-        """Get Keycloak logout URL"""
+        """
+        Get Keycloak logout URL.
+    
+        Args:
+        return_to: URL to redirect back to after logout (optional)
+        
+        Returns:
+        str: Logout URL or None if logout_url not configured
+        """
+        if not self.logout_url:
+            log.debug("logout_url not configured for SSOClient")
+            return None
+    
         params = {}
         if return_to:
             params['post_logout_redirect_uri'] = return_to
+    
         if params:
             return f"{self.logout_url}?{urlencode(params)}"
+    
         return self.logout_url
 
     def get_token(self, code):

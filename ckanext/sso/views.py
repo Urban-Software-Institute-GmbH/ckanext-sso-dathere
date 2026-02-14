@@ -10,8 +10,9 @@ from ckan.plugins import toolkit as tk
 import ckan.plugins as plugins
 from ckan.views.user import set_repoze_user, RequestResetView
 from ckan.common import (
-    _, config, g, request, current_user, logout_user, session
+    _, config, g, request, current_user, logout_user, session, login_user
 )
+
 
 from ckanext.sso.ssoclient import SSOClient
 import ckanext.sso.helpers as helpers
@@ -32,7 +33,6 @@ scope = tk.config.get('ckanext.sso.scope')
 access_token_url = tk.config.get('ckanext.sso.access_token_url')
 user_info_url = tk.config.get('ckanext.sso.user_info')
 logout_url = tk.config.get('ckanext.sso.logout_url') 
-logout_redirect_url = tk.config.get('ckanext.sso.logout_redirect_url')
 
 
 # Initialize SSO client
@@ -60,11 +60,15 @@ def before_app_request():
     
 
 def _log_user_into_ckan(resp):
-    """ Log the user into different CKAN versions."""
+    """ Log the user into different CKAN versions.
+    CKAN 2.10 introduces flask-login and login_user method.
+    CKAN 2.9.6 added a security change and identifies the user
+    with the internal id plus a serial autoincrement (currently static).
+    CKAN <= 2.9.5 identifies the user only using the internal id.
+    """
     log.info("Logging user into CKAN")
     
     if tk.check_ckan_version(min_version="2.10"):
-        from ckan.common import login_user
         login_user(g.user_obj)
         return
 
@@ -209,7 +213,9 @@ def dashboard():
 
 
 def sso_logout():
-    """Handle logout from both CKAN and Keycloak."""
+    """Handle logout - optionally redirect to Keycloak if configured."""
+    log.info("Logging out user")
+    
     # Call IAuthenticator plugins
     for item in plugins.PluginImplementations(plugins.IAuthenticator):
         response = item.logout()
@@ -218,6 +224,7 @@ def sso_logout():
     
     user = current_user.name if hasattr(current_user, 'name') else None
     if not user:
+        log.info("No user logged in, redirecting to login page")
         return h.redirect_to('user.login')
 
     came_from = request.args.get('came_from', '')
@@ -230,13 +237,27 @@ def sso_logout():
     if session.get(field_name):
         session.pop(field_name)
 
+    # Check if we should redirect to a local URL
     if h.url_is_local(came_from):
         return h.redirect_to(str(came_from))
     
-    # Redirect to Keycloak logout
-    logout_url = sso_client.get_logout_url(return_to=logout_redirect_url)
-    log.info(f"Redirecting to Keycloak logout: {logout_url}")
-    return tk.redirect_to(logout_url)
+    # OPTIONAL: Try Keycloak logout only if URL is configured
+    logout_url = tk.config.get('ckanext.sso.logout_url')
+    
+    if logout_url:
+        try:
+            # Use the came_from or default to home page
+            return_to = came_from or '/'
+            logout_url_full = sso_client.get_logout_url(return_to=return_to)
+            if logout_url_full:
+                log.info(f"Redirecting to Keycloak logout: {logout_url_full}")
+                return tk.redirect_to(logout_url_full)
+        except Exception as e:
+            log.error(f"Error during Keycloak logout redirect: {e}")
+    
+    # Default: redirect to home page
+    log.info("Redirecting to home page")
+    return tk.redirect_to('/')
 
 
 def reset_password():
