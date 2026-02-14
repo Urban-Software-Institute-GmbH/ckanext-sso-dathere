@@ -213,8 +213,8 @@ def dashboard():
 
 
 def sso_logout():
-    """Handle logout - optionally redirect to Keycloak if configured."""
-    log.info("Logging out user")
+    """Logout from both CKAN and Keycloak."""
+    log.info("Logging out user from CKAN and Keycloak")
     
     # Call IAuthenticator plugins
     for item in plugins.PluginImplementations(plugins.IAuthenticator):
@@ -223,11 +223,9 @@ def sso_logout():
             return response
     
     user = current_user.name if hasattr(current_user, 'name') else None
-    if not user:
-        log.info("No user logged in, redirecting to login page")
-        return h.redirect_to('user.login')
-
-    came_from = request.args.get('came_from', '')
+    
+    # Get the redirect URL before clearing session
+    came_from = request.args.get('came_from', '/')
     
     # Clear CKAN session
     logout_user()
@@ -236,27 +234,23 @@ def sso_logout():
     field_name = config.get("WTF_CSRF_FIELD_NAME")
     if session.get(field_name):
         session.pop(field_name)
-
-    # Check if we should redirect to a local URL
-    if h.url_is_local(came_from):
-        return h.redirect_to(str(came_from))
     
-    # OPTIONAL: Try Keycloak logout only if URL is configured
+    # Clear the entire session to be safe
+    session.clear()
+    
+    # IMPORTANT: Redirect to Keycloak logout
     logout_url = tk.config.get('ckanext.sso.logout_url')
-    
     if logout_url:
         try:
-            # Use the came_from or default to home page
-            return_to = came_from or '/'
-            logout_url_full = sso_client.get_logout_url(return_to=return_to)
+            # Redirect to Keycloak logout, which will then redirect back to home
+            logout_url_full = sso_client.get_logout_url(return_to=came_from)
             if logout_url_full:
-                log.info(f"Redirecting to Keycloak logout: {logout_url_full}")
+                log.info(f"Redirecting to Keycloak logout")
                 return tk.redirect_to(logout_url_full)
         except Exception as e:
             log.error(f"Error during Keycloak logout redirect: {e}")
     
-    # Default: redirect to home page
-    log.info("Redirecting to home page")
+    # Fallback to home page
     return tk.redirect_to('/')
 
 

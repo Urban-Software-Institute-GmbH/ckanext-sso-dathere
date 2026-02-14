@@ -25,7 +25,9 @@ class SSOClient(object):
     def get_authorize_url(self, **kwargs):
         log.debug('get_authorize_url')
         oauth = OAuth2Session(self.client_id, redirect_uri=self.redirect_url,
-                            scope=self.scope)
+                        scope=self.scope)
+        # Add prompt=login to force re-authentication
+        kwargs['prompt'] = 'login'
         authorization_url, state = oauth.authorization_url(self.authorize_url, **kwargs)
         return authorization_url
 
@@ -135,7 +137,7 @@ class SSOClient(object):
                 log.debug(f"Audience is a list: {audience}")
                 # If audience is a list, your client_id might be one of them
                 if self.client_id in audience:
-                    log.info(f"Client ID {self.client_id} found in audience list")
+                    log.debug(f"Client ID {self.client_id} found in audience list")
             else:
                 log.debug(f"Audience is a string: {audience}")
             
@@ -211,38 +213,38 @@ class SSOClient(object):
         
         return client_roles
     
-    def debug_token(self, token_response):
-        """
-        Debug method to inspect token claims.
-        Call this temporarily to understand your token structure.
-        """
-        access_token = token_response.get('access_token')
-        if not access_token:
-            log.warning("No access_token in token response")
-            return
+    # def debug_token(self, token_response):
+    #     """
+    #     Debug method to inspect token claims.
+    #     Call this temporarily to understand your token structure.
+    #     """
+    #     access_token = token_response.get('access_token')
+    #     if not access_token:
+    #         log.warning("No access_token in token response")
+    #         return
         
-        try:
-            # Decode without verification
-            decoded = jwt.decode(
-                access_token, 
-                options={"verify_signature": False, "verify_aud": False}
-            )
+    #     try:
+    #         # Decode without verification
+    #         decoded = jwt.decode(
+    #             access_token, 
+    #             options={"verify_signature": False, "verify_aud": False}
+    #         )
             
-            log.info("=== TOKEN DEBUG INFO ===")
-            log.info(f"Token algorithm: {decoded.get('alg', 'unknown')}")
-            log.info(f"Issuer (iss): {decoded.get('iss')}")
-            log.info(f"Audience (aud): {decoded.get('aud')}")
-            log.info(f"Subject (sub): {decoded.get('sub')}")
-            log.info(f"Client ID: {self.client_id}")
-            log.info(f"Resource access keys: {list(decoded.get('resource_access', {}).keys())}")
+    #         log.info("=== TOKEN DEBUG INFO ===")
+    #         log.info(f"Token algorithm: {decoded.get('alg', 'unknown')}")
+    #         log.info(f"Issuer (iss): {decoded.get('iss')}")
+    #         log.info(f"Audience (aud): {decoded.get('aud')}")
+    #         log.info(f"Subject (sub): {decoded.get('sub')}")
+    #         log.info(f"Client ID: {self.client_id}")
+    #         log.info(f"Resource access keys: {list(decoded.get('resource_access', {}).keys())}")
             
-            if self.client_id in decoded.get('resource_access', {}):
-                roles = decoded['resource_access'][self.client_id].get('roles', [])
-                log.info(f"Your client roles: {roles}")
-            else:
-                log.info(f"Client ID {self.client_id} not found in resource_access")
+    #         if self.client_id in decoded.get('resource_access', {}):
+    #             roles = decoded['resource_access'][self.client_id].get('roles', [])
+    #             log.info(f"Your client roles: {roles}")
+    #         else:
+    #             log.info(f"Client ID {self.client_id} not found in resource_access")
             
-            log.info("=========================")
+    #         log.info("=========================")
             
-        except Exception as e:
-            log.error(f"Error debugging token: {e}")
+    #     except Exception as e:
+    #         log.error(f"Error debugging token: {e}")
