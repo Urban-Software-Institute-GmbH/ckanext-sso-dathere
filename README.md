@@ -1,5 +1,6 @@
 ## Table of Contents
 
+0. [Forking explained](#0-introduction)
 1. [Introduction](#1-introduction)
 2. [Features](#2-features)
 3. [Installation](#3-installation)
@@ -15,8 +16,14 @@
 
 # ckanext-sso
 
-## 🚨🚨 In this forked version of ckanext-sso-dathere, we will allow Keycloak users to manage CKAN administrators directly within Keycloak using #Role Mapping!!!! 🚨🚨
+### 0. Forking explained
 
+ 🚨🚨 The main reason for forking ckanext-sso-dathere is to enable admin management directly within Keycloak. While ckanext-sso-dathere works well with Keycloak, as of February 2026 it does not provide the ability to manage CKAN administrators from within Keycloak.
+
+This forked plugin uses Role Mapping to assign or remove admin roles for users.
+
+Scroll to Setup Keycloak
+ to learn how to configure your Keycloak. 🚨🚨
 
 
 
@@ -82,9 +89,6 @@ If you have any questions, please feel free to reach out to us at [
 datHere Support](mailto:<support@dathere.com>).
 
 ### 9. Setup Keycloak
-
-As mentioned at the beginning. This plugin supoort just client-user role mapping. It was only tested on Keycloak version 26.0.0 and ckan 2.11.4 and worked very well
-
 
 a- Create a normal OpenID Connect client.
 
