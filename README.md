@@ -16,7 +16,7 @@
 
 # ckanext-sso
 
-### 0. Forking explained
+### 1. Forking explained
 
  🚨🚨 The main reason for forking ckanext-sso-dathere is to enable admin management directly within Keycloak. While ckanext-sso-dathere works well with Keycloak, as of February 2026 it does not provide the ability to manage CKAN administrators from within Keycloak.
 
@@ -27,20 +27,20 @@ Scroll to Setup Keycloak
 
 
 
-### 1. Introduction
+### 2. Introduction
 **ckanext-sso** is an extension for CKAN, a powerful data management system that makes data accessible and usable. This extension provides Single Sign-On (SSO) capabilities, allowing users to log in to CKAN using various SSO providers.
 
 ### Tested on
 - CKAN 2.9
 - CKAN 2.10
 
-### 2. Features
+### 3. Features
 
 * SSO Integration: Seamlessly integrate with popular SSO providers.
 * Easy Configuration: Simple setup to connect with your existing SSO system.
 * Enhanced Security: Leverage SSO for a secure authentication experience.
 
-### 3. Installation
+### 4. Installation
 
 To install the extension:
 
@@ -52,7 +52,7 @@ To install the extension:
 
 - Add `sso` settings in CKAN config file
 
-### 4. Configuration
+### 5. Configuration
 
 ``` ini
 
@@ -71,24 +71,24 @@ ckanext.sso.user_info = [user_info_url]
 ckanext.sso.disable_ckan_login = [True|False]
 ```
 
-### 5. Usage
+### 6. Usage
 
 After installing the extension and configuring the settings, you can now log in to CKAN using your SSO credentials.
 
-### 6. Contributing
+### 7. Contributing
 
 Contributions are welcome! Please read our [contributing guide](CONTRIBUTING.md) to learn more.
 
-### 7. License
+### 8. License
 
 This project is licensed under the terms of the [MIT License](LICENSE).
 
-### 8. Contact
+### 9. Contact
 
 If you have any questions, please feel free to reach out to us at [
 datHere Support](mailto:<support@dathere.com>).
 
-### 9. Setup Keycloak
+### 10. Setup Keycloak
 
 a- Create a normal OpenID Connect client.
 
