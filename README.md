@@ -1,15 +1,15 @@
 ## Table of Contents
 
-0. [Forking explained](#0-introduction)
-1. [Introduction](#1-introduction)
-2. [Features](#2-features)
-3. [Installation](#3-installation)
-4. [Configuration](#4-configuration)
-5. [Usage](#5-usage)
-6. [Contributing](#6-contributing)
-7. [License](#7-license)
-8. [Contact](#8-contact)
-9. [Setup Keycloak](#9-setup-keycloak)
+1. [Forking explained](#1-introduction)
+2. [Introduction](#2-introduction)
+3. [Features](#3-features)
+4. [Installation](#4-installation)
+5. [Configuration](#5-configuration)
+6. [Usage](#6-usage)
+7. [Contributing](#7-contributing)
+8. [License](#8-license)
+9. [Contact](#9-contact)
+10. [Setup Keycloak](#10-setup-keycloak)
 
 
 
