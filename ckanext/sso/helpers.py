@@ -13,13 +13,13 @@ log = logging.getLogger(__name__)
 
 
 def generate_password():
-    '''Generate a random password.'''
+    """Generate a random password."""
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(8))
 
 
 def ensure_unique_username(given_name):
-    '''Ensure that the username is unique.'''
+    """Ensure that the username is unique."""
     cleaned_localpart = re.sub(r'[^\w]', '-', given_name).lower()
 
     if not model.User.get(cleaned_localpart):
@@ -37,19 +37,20 @@ def ensure_unique_username(given_name):
 
 
 def process_user(user_dict):
-    '''Process user info from SSO provider and create/update user in CKAN.'''
+    """
+    Process user info from SSO provider and create/update user in CKAN.
+
+    Note:
+    This function does NOT promote users to CKAN sysadmin.
+    Organization-level roles are handled separately via Keycloak groups.
+    """
     user = _get_user_by_email(user_dict.get('email'))
-    
+
     if user:
-        # Update existing user
         user = _update_user(user, user_dict)
     else:
-        # Create new user
         user = _create_user(user_dict)
-    
-    # Check for admin role in client roles and promote if needed
-    _check_and_promote_to_admin(user, user_dict)
-    
+
     return user
 
 
@@ -63,147 +64,210 @@ def _get_user_by_email(email):
 
 
 def activate_user_if_deleted(user):
-    '''Reactivates deleted user.'''
+    """Reactivates deleted user."""
     if not user:
         return
     if user.is_deleted():
         user.activate()
         user.commit()
-        log.info(u'User {} reactivated'.format(user.name))
+        log.info(u'✅ [USER] User {} reactivated'.format(user.name))
 
 
 def _create_user(user_dict):
-    '''Create a new user.'''
+    """Create a new user."""
     context = {u'ignore_auth': True}
-    
-    # Prepare user dict for CKAN
+
     ckan_user_dict = {
         'name': user_dict['name'],
         'email': user_dict['email'],
         'password': user_dict['password'],
         'fullname': user_dict.get('fullname', ''),
     }
-    
-    # Add image if present
+
     if user_dict.get('image_url'):
         ckan_user_dict['image_url'] = user_dict['image_url']
-    
-    # Add plugin_extras if present
+
     if user_dict.get('plugin_extras'):
         ckan_user_dict['plugin_extras'] = user_dict['plugin_extras']
-    
+
     created_user_dict = tk.get_action(u'user_create')(context, ckan_user_dict)
+    log.info(f"✅ [USER CREATE] Created CKAN user {created_user_dict['name']}")
     return _get_user_by_email(created_user_dict['email'])
 
 
 def _update_user(user, user_dict):
-    '''Update existing user with new information from SSO.'''
+    """Update existing user with new information from SSO."""
     context = {u'ignore_auth': True}
-    
+
     update_dict = {
         'id': user.id,
         'name': user.name,
         'fullname': user_dict.get('fullname', user.fullname or ''),
         'email': user_dict.get('email', user.email),
     }
-    
-    # Update plugin_extras if provided
+
     if user_dict.get('plugin_extras'):
-        # Merge with existing plugin_extras
         existing_extras = user.plugin_extras or {}
         existing_extras.update(user_dict['plugin_extras'])
         update_dict['plugin_extras'] = existing_extras
-    
+
     tk.get_action(u'user_update')(context, update_dict)
+    log.info(f"🔄 [USER UPDATE] Updated CKAN user {user.name}")
     return model.User.get(user.id)
 
 
-def _check_and_promote_to_admin(user, user_dict):
-    '''
-    Check if user has admin role in Keycloak client roles 
-    and promote to CKAN sysadmin.
-    '''
-    plugin_extras = user_dict.get('plugin_extras', {})
-    
-    # Get ONLY client roles
-    client_roles = plugin_extras.get('client_roles', [])
-    
-    # Define what constitutes an "admin" role in your client
-    # These are the client role names you want to map to CKAN sysadmin
-    admin_roles = ['admin', 'administrator', 'sysadmin', 'ckan_admin', 'ckan-admin']
-    
-    has_admin_role = False
-    
-    # Check if any of the user's client roles match admin roles
-    for role in client_roles:
-        if role.lower() in [r.lower() for r in admin_roles]:
-            has_admin_role = True
-            log.info(f"User {user.name} has admin client role '{role}'")
-            break
-    
-    # Promote or demote based on client role
-    if has_admin_role and not user.sysadmin:
-        # User has admin client role but is not sysadmin - promote
-        _set_sysadmin(user, True)
-        log.info(f"User {user.name} promoted to sysadmin based on client role")
-    elif not has_admin_role and user.sysadmin:
-        # User lost admin client role - demote
-        _set_sysadmin(user, False)
-        log.info(f"User {user.name} demoted from sysadmin - no longer has admin client role")
-    elif has_admin_role and user.sysadmin:
-        log.debug(f"User {user.name} already has sysadmin privileges")
-    else:
-        log.debug(f"User {user.name} does not have admin client role")
+def _organization_exists(org_name):
+    """
+    Check whether a CKAN organization exists.
 
-
-def _set_sysadmin(user, is_admin):
-    '''Set or unset user as sysadmin.'''
+    Returns:
+        bool
+    """
     try:
-        # Use CKAN's internal method to set sysadmin
-        user.sysadmin = is_admin
-        user.save()
-        model.Session.commit()
-        log.info(f"Set sysadmin={is_admin} for user {user.name}")
+        tk.get_action('organization_show')(
+            {'ignore_auth': True},
+            {'id': org_name}
+        )
+        return True
     except Exception as e:
-        log.error(f"Error setting sysadmin for user {user.name}: {e}")
-        model.Session.rollback()
+        log.warning(f"⚠️ [ORG CHECK] Organization '{org_name}' does not exist or cannot be accessed: {e}")
+        return False
+
+
+def _add_or_update_user_organization_role(user, org_name, capacity):
+    """
+    Add or update a user's membership in a CKAN organization.
+
+    capacity should be one of:
+        admin, editor, member
+
+    This function never raises an exception outward.
+    """
+    try:
+        context = {
+            'ignore_auth': True,
+            'user': user.name,
+            'auth_user_obj': user
+        }
+
+        data_dict = {
+            'id': org_name,
+            'username': user.name,
+            'role': capacity
+        }
+
+        tk.get_action('member_create')(context, data_dict)
+
+        log.info(
+            f"✅ [ORG SYNC] Ensured user '{user.name}' is '{capacity}' in organization '{org_name}'"
+        )
+
+    except Exception as e:
+        log.error(
+            f"❌ [ORG SYNC] Failed to add/update user '{user.name}' "
+            f"in organization '{org_name}' with role '{capacity}': {e}"
+        )
+
+
+def sync_user_organizations(user, organization_roles):
+    """
+    Sync user organization memberships from resolved Keycloak organization roles.
+
+    Args:
+        user: CKAN user object
+        organization_roles: dict like
+            {
+                "org-a": "admin",
+                "org-b": "editor",
+                "org-c": "member"
+            }
+
+    Behavior:
+    - Invalid input is ignored safely
+    - Missing organizations do not crash the app
+    - Unknown roles are ignored
+    - Only adds/updates memberships for organizations present in organization_roles
+    - Does NOT remove memberships from other organizations
+    """
+    if not user:
+        log.warning("⚠️ [ORG SYNC] No user provided, skipping organization sync")
+        return
+
+    if not organization_roles:
+        log.info(f"ℹ️ [ORG SYNC] No organization roles to sync for user '{user.name}'")
+        return
+
+    if not isinstance(organization_roles, dict):
+        log.warning(
+            f"⚠️ [ORG SYNC] organization_roles is not a dict for user '{user.name}': {organization_roles}"
+        )
+        return
+
+    allowed_roles = {'admin', 'editor', 'member'}
+
+    for org_name, capacity in organization_roles.items():
+        try:
+            if not org_name or not isinstance(org_name, str):
+                log.warning(f"⚠️ [ORG SYNC] Invalid organization name ignored: {org_name}")
+                continue
+
+            if capacity not in allowed_roles:
+                log.warning(
+                    f"⚠️ [ORG SYNC] Invalid capacity '{capacity}' for organization '{org_name}', skipping"
+                )
+                continue
+
+            if not _organization_exists(org_name):
+                log.warning(
+                    f"⚠️ [ORG SYNC] Skipping membership sync because organization '{org_name}' does not exist"
+                )
+                continue
+
+            _add_or_update_user_organization_role(user, org_name, capacity)
+
+        except Exception as e:
+            log.error(
+                f"❌ [ORG SYNC] Unexpected error while syncing organization '{org_name}' "
+                f"for user '{user.name}': {e}"
+            )
+            continue
 
 
 def check_default_login():
-    '''Check if default login is enabled.'''
+    """Check if default login is enabled."""
     return tk.asbool(tk.config.get('ckanext.sso.disable_ckan_login', False))
 
 
 def user_has_client_role(user, role_name):
-    '''
+    """
     Helper to check if a user has a specific client role.
     Useful for templates and other extensions.
-    
-    Args:
-        user: CKAN user object
-        role_name: The client role name to check for
-        
-    Returns:
-        bool: True if user has the role
-    '''
+    """
     if not user or not hasattr(user, 'plugin_extras') or not user.plugin_extras:
         return False
-    
+
     client_roles = user.plugin_extras.get('client_roles', [])
     return role_name in client_roles
 
 
 def get_user_client_roles(user):
-    '''
+    """
     Get all client roles for a user.
-    
-    Args:
-        user: CKAN user object
-        
-    Returns:
-        list: List of client role names
-    '''
+    """
     if not user or not hasattr(user, 'plugin_extras') or not user.plugin_extras:
         return []
-    
+
     return user.plugin_extras.get('client_roles', [])
+
+
+def get_user_organization_roles(user):
+    """
+    Get resolved organization roles stored in plugin_extras.
+
+    Returns:
+        dict
+    """
+    if not user or not hasattr(user, 'plugin_extras') or not user.plugin_extras:
+        return {}
+
+    return user.plugin_extras.get('organization_roles', {})

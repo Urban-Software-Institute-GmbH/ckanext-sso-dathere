@@ -25,6 +25,7 @@ class SSOPlugin(plugins.SingletonPlugin):
             'check_default_login': helpers.check_default_login,
             'user_has_client_role': helpers.user_has_client_role,
             'get_user_client_roles': helpers.get_user_client_roles,
+            'get_user_organization_roles': helpers.get_user_organization_roles,
         }
 
     # IConfigurer
@@ -36,17 +37,17 @@ class SSOPlugin(plugins.SingletonPlugin):
 
     def get_blueprint(self):
         return get_blueprint()
-    
+
     # IAuthenticator
-    
+
     def identify(self):
         """Identify the user - handled by the blueprint"""
         pass
-    
+
     def logout(self):
         """Handle logout - we'll let the blueprint handle it"""
         return None
-    
+
     def login(self):
         """Handle login - we'll let the blueprint handle it"""
         return None
