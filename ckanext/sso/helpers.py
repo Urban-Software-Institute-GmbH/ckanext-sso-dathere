@@ -140,8 +140,6 @@ def _add_or_update_user_organization_role(user, org_name, capacity):
 
     capacity should be one of:
         admin, editor, member
-
-    This function never raises an exception outward.
     """
     try:
         context = {
@@ -152,8 +150,9 @@ def _add_or_update_user_organization_role(user, org_name, capacity):
 
         data_dict = {
             'id': org_name,
-            'username': user.name,
-            'role': capacity
+            'object': user.name,
+            'object_type': 'user',
+            'capacity': capacity
         }
 
         tk.get_action('member_create')(context, data_dict)
