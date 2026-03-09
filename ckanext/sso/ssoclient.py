@@ -108,6 +108,34 @@ class SSOClient(object):
             log.error(f"Error decoding JWT: {e}")
         
         return client_roles
+    
+    def extract_groups_from_token(self, token_response):
+        """
+        Extract groups from the access_token JWT.
+        """
+        groups = []
+
+        access_token = token_response.get('access_token')
+        if not access_token:
+            log.info("🔥🔥🔥🔥🔥🔥 [KEYCLOAK TOKEN] No access_token found in token response🔥🔥🔥🔥")
+            return groups
+
+        try:
+            decoded = jwt.decode(
+                access_token,
+                options={
+                "verify_signature": False,
+                "verify_aud": False
+                }
+            )
+
+            groups = decoded.get('groups', [])
+            log.info(f"🔥🔥🔥🔥🔥🔥Extracted groups: {groups}")
+
+        except PyJWTError as e:
+            log.info(f"🔥🔥🔥🔥🔥🔥Error decoding JWT: {e}")
+
+        return groups
         
     # def extract_client_roles_from_token_with_audience(self, token_response):
     #     """
