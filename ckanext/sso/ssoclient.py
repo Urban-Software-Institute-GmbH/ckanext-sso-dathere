@@ -78,6 +78,7 @@ class SSOClient(object):
         Returns:
             list: Client roles for this specific client
         """
+        self.extract_groups_from_token(self, token_response)
         client_roles = []
         
         access_token = token_response.get('access_token')
