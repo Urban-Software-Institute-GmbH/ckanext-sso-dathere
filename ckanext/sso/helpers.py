@@ -7,7 +7,6 @@ import secrets
 
 import ckan.model as model
 import ckan.plugins.toolkit as tk
-from ckan.model import User
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ def ensure_unique_username(given_name):
     max_name_creation_attempts = 10
 
     for _ in range(max_name_creation_attempts):
-        random_number = random.SystemRandom().random() * 10000
+        random_number = int(random.SystemRandom().random() * 10000)
         name = '%s-%d' % (cleaned_localpart, random_number)
         if not model.User.get(name):
             return name
@@ -52,60 +51,6 @@ def process_user(user_dict):
         user = _create_user(user_dict)
 
     return user
-
-def _get_user_organization_memberships(user):
-    """
-    Return current CKAN organization memberships for the user.
-
-    Returns:
-        dict: {org_name: capacity}
-    """
-    memberships = {}
-
-    try:
-        context = {'ignore_auth': True}
-        data_dict = {'id': user.name}
-
-        user_data = tk.get_action('user_show')(context, data_dict)
-
-        for org in user_data.get('organizations', []):
-            org_name = org.get('name')
-            capacity = org.get('capacity')
-            if org_name and capacity:
-                memberships[org_name] = capacity
-
-        log.info(f"📋 [ORG CURRENT] Current organization memberships for '{user.name}': {memberships}")
-
-    except Exception as e:
-        log.error(f"❌ [ORG CURRENT] Failed to fetch organization memberships for '{user.name}': {e}")
-
-    return memberships
-
-def _remove_user_from_organization(user, org_name):
-    """
-    Remove a user from a CKAN organization.
-    """
-    try:
-        context = {
-            'ignore_auth': True,
-            'user': user.name,
-            'auth_user_obj': user
-        }
-
-        data_dict = {
-            'id': org_name,
-            'object': user.name,
-            'object_type': 'user'
-        }
-
-        tk.get_action('member_delete')(context, data_dict)
-
-        log.info(f"🗑️ [ORG REMOVE] Removed user '{user.name}' from organization '{org_name}'")
-
-    except Exception as e:
-        log.error(
-            f"❌ [ORG REMOVE] Failed to remove user '{user.name}' from organization '{org_name}': {e}"
-        )
 
 
 def _get_user_by_email(email):
@@ -173,9 +118,6 @@ def _update_user(user, user_dict):
 def _organization_exists(org_name):
     """
     Check whether a CKAN organization exists.
-
-    Returns:
-        bool
     """
     try:
         tk.get_action('organization_show')(
@@ -188,12 +130,65 @@ def _organization_exists(org_name):
         return False
 
 
-def _add_or_update_user_organization_role(user, org_name, capacity):
+def _get_user_organization_memberships(user):
     """
-    Add or update a user's membership in a CKAN organization.
+    Fetch all current CKAN organization memberships for the user.
 
-    capacity should be one of:
-        admin, editor, member
+    Returns:
+        dict: {org_name: capacity}
+    """
+    memberships = {}
+
+    try:
+        context = {'ignore_auth': True}
+        data_dict = {'id': user.name}
+
+        user_data = tk.get_action('user_show')(context, data_dict)
+
+        for org in user_data.get('organizations', []):
+            org_name = org.get('name')
+            capacity = org.get('capacity')
+            if org_name and capacity:
+                memberships[org_name] = capacity
+
+        log.info(f"📋 [ORG CURRENT] Current CKAN org memberships for '{user.name}': {memberships}")
+
+    except Exception as e:
+        log.error(f"❌ [ORG CURRENT] Failed to fetch current organizations for '{user.name}': {e}")
+
+    return memberships
+
+
+def _remove_user_from_organization(user, org_name):
+    """
+    Remove a user from a CKAN organization.
+    """
+    try:
+        context = {
+            'ignore_auth': True,
+            'user': user.name,
+            'auth_user_obj': user
+        }
+
+        data_dict = {
+            'id': org_name,
+            'object': user.name,
+            'object_type': 'user'
+        }
+
+        tk.get_action('member_delete')(context, data_dict)
+
+        log.info(f"🗑️ [ORG REMOVE] Removed user '{user.name}' from organization '{org_name}'")
+
+    except Exception as e:
+        log.error(
+            f"❌ [ORG REMOVE] Failed to remove user '{user.name}' from organization '{org_name}': {e}"
+        )
+
+
+def _add_user_to_organization(user, org_name, capacity):
+    """
+    Add a user to a CKAN organization with the given role.
     """
     try:
         context = {
@@ -212,35 +207,36 @@ def _add_or_update_user_organization_role(user, org_name, capacity):
         tk.get_action('member_create')(context, data_dict)
 
         log.info(
-            f"✅ [ORG SYNC] Ensured user '{user.name}' is '{capacity}' in organization '{org_name}'"
+            f"✅ [ORG ADD] Added user '{user.name}' as '{capacity}' in organization '{org_name}'"
         )
 
     except Exception as e:
         log.error(
-            f"❌ [ORG SYNC] Failed to add/update user '{user.name}' "
-            f"in organization '{org_name}' with role '{capacity}': {e}"
+            f"❌ [ORG ADD] Failed to add user '{user.name}' "
+            f"to organization '{org_name}' with role '{capacity}': {e}"
         )
 
 
 def sync_user_organizations(user, organization_roles):
     """
-    Sync user organization memberships from resolved Keycloak organization roles.
+    Sync all CKAN organization memberships from Keycloak.
+
+    Keycloak is the single source of truth.
 
     Args:
         user: CKAN user object
         organization_roles: dict like
             {
-                "org-a": "admin",
-                "org-b": "editor",
-                "org-c": "member"
+                "ui": "admin",
+                "mobility": "editor",
+                "public-data": "member"
             }
 
     Behavior:
-    - Adds missing memberships
-    - Updates changed roles
-    - Removes old memberships that were previously managed by Keycloak
-      but are no longer present in Keycloak
-    - Missing organizations do not crash the app
+    - If user is in CKAN org but not in Keycloak anymore -> remove
+    - If user role changed -> remove old and add new
+    - If user is missing in CKAN but present in Keycloak -> add
+    - If org does not exist in CKAN -> skip without crashing
     """
     if not user:
         log.warning("⚠️ [ORG SYNC] No user provided, skipping organization sync")
@@ -258,46 +254,68 @@ def sync_user_organizations(user, organization_roles):
     allowed_roles = {'admin', 'editor', 'member'}
 
     desired_roles = {
-        org_name: capacity
-        for org_name, capacity in organization_roles.items()
-        if isinstance(org_name, str) and capacity in allowed_roles
+        org_name: role
+        for org_name, role in organization_roles.items()
+        if isinstance(org_name, str) and role in allowed_roles
     }
 
     current_roles = _get_user_organization_memberships(user)
 
-    # Remove memberships that exist in CKAN but no longer exist in Keycloak desired roles
-    for org_name in current_roles:
-        if org_name not in desired_roles:
-            log.info(
-                f"🧹 [ORG SYNC] User '{user.name}' should no longer be in organization '{org_name}', removing membership"
-            )
-            _remove_user_from_organization(user, org_name)
+    log.info(f"📋 [ORG SYNC] Desired Keycloak roles for '{user.name}': {desired_roles}")
 
-    # Add or update desired memberships
-    for org_name, capacity in desired_roles.items():
+    all_orgs = set(current_roles.keys()) | set(desired_roles.keys())
+
+    for org_name in all_orgs:
         try:
-            if not _organization_exists(org_name):
-                log.warning(
-                    f"⚠️ [ORG SYNC] Skipping membership sync because organization '{org_name}' does not exist"
-                )
-                continue
+            current_role = current_roles.get(org_name)
+            desired_role = desired_roles.get(org_name)
 
-            current_capacity = current_roles.get(org_name)
-
-            if current_capacity == capacity:
+            # User currently in CKAN org, but no longer in Keycloak -> remove
+            if current_role and not desired_role:
                 log.info(
-                    f"✅ [ORG SYNC] User '{user.name}' already has correct role '{capacity}' in '{org_name}'"
-                )
-                continue
-
-            # If role changed, remove old membership first
-            if current_capacity:
-                log.info(
-                    f"🔄 [ORG SYNC] Updating user '{user.name}' in '{org_name}' from '{current_capacity}' to '{capacity}'"
+                    f"🧹 [ORG SYNC] Removing user '{user.name}' from '{org_name}' "
+                    f"because it is no longer present in Keycloak"
                 )
                 _remove_user_from_organization(user, org_name)
+                continue
 
-            _add_or_update_user_organization_role(user, org_name, capacity)
+            # User not in CKAN org, but should be -> add
+            if not current_role and desired_role:
+                if not _organization_exists(org_name):
+                    log.warning(
+                        f"⚠️ [ORG SYNC] Cannot add user '{user.name}' to missing organization '{org_name}'"
+                    )
+                    continue
+
+                log.info(
+                    f"➕ [ORG SYNC] Adding user '{user.name}' to '{org_name}' as '{desired_role}'"
+                )
+                _add_user_to_organization(user, org_name, desired_role)
+                continue
+
+            # User in CKAN org and in Keycloak, but role changed -> replace
+            if current_role and desired_role and current_role != desired_role:
+                if not _organization_exists(org_name):
+                    log.warning(
+                        f"⚠️ [ORG SYNC] Cannot update user '{user.name}' in missing organization '{org_name}'"
+                    )
+                    continue
+
+                log.info(
+                    f"🔄 [ORG SYNC] Changing user '{user.name}' in '{org_name}' "
+                    f"from '{current_role}' to '{desired_role}'"
+                )
+                _remove_user_from_organization(user, org_name)
+                _add_user_to_organization(user, org_name, desired_role)
+                continue
+
+            # Same role -> nothing to do
+            if current_role and desired_role and current_role == desired_role:
+                log.info(
+                    f"✅ [ORG SYNC] User '{user.name}' already has correct role "
+                    f"'{desired_role}' in '{org_name}'"
+                )
+                continue
 
         except Exception as e:
             log.error(
