@@ -132,7 +132,8 @@ def _organization_exists(org_name):
 
 def _get_user_organization_memberships(user):
     """
-    Fetch all current CKAN organization memberships for the user.
+    Fetch all current CKAN organization memberships for the user directly
+    from CKAN's model tables.
 
     Returns:
         dict: {org_name: capacity}
@@ -140,16 +141,43 @@ def _get_user_organization_memberships(user):
     memberships = {}
 
     try:
-        context = {'ignore_auth': True}
-        data_dict = {'id': user.name}
+        member_rows = (
+            model.Session.query(model.Member)
+            .filter(model.Member.table_name == 'user')
+            .filter(model.Member.table_id == user.id)
+            .filter(model.Member.state == 'active')
+            .all()
+        )
 
-        user_data = tk.get_action('user_show')(context, data_dict)
+        log.info(f"🧾 [ORG CURRENT RAW] Found {len(member_rows)} active member rows for user '{user.name}'")
 
-        for org in user_data.get('organizations', []):
-            org_name = org.get('name')
-            capacity = org.get('capacity')
-            if org_name and capacity:
-                memberships[org_name] = capacity
+        for member in member_rows:
+            try:
+                group = model.Group.get(member.group_id)
+
+                if not group:
+                    log.warning(
+                        f"⚠️ [ORG CURRENT RAW] No group found for member row with group_id={member.group_id}"
+                    )
+                    continue
+
+                # Only keep organizations
+                if getattr(group, 'type', None) != 'organization':
+                    log.info(
+                        f"ℹ️ [ORG CURRENT SKIP] Skipping non-organization group '{group.name}' "
+                        f"(type={getattr(group, 'type', None)})"
+                    )
+                    continue
+
+                memberships[group.name] = member.capacity
+
+                log.info(
+                    f"🏢 [ORG CURRENT ADD] User '{user.name}' is currently '{member.capacity}' "
+                    f"in organization '{group.name}'"
+                )
+
+            except Exception as inner_e:
+                log.error(f"❌ [ORG CURRENT ITEM] Error processing membership row: {inner_e}")
 
         log.info(f"📋 [ORG CURRENT] Current CKAN org memberships for '{user.name}': {memberships}")
 
@@ -260,6 +288,9 @@ def sync_user_organizations(user, organization_roles):
     }
 
     current_roles = _get_user_organization_memberships(user)
+
+    log.info(f"📋 [ORG SYNC CURRENT] CKAN current roles for '{user.name}': {current_roles}")
+    log.info(f"📋 [ORG SYNC DESIRED] Keycloak desired roles for '{user.name}': {desired_roles}")
 
     log.info(f"📋 [ORG SYNC] Desired Keycloak roles for '{user.name}': {desired_roles}")
 
