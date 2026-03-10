@@ -53,6 +53,60 @@ def process_user(user_dict):
 
     return user
 
+def _get_user_organization_memberships(user):
+    """
+    Return current CKAN organization memberships for the user.
+
+    Returns:
+        dict: {org_name: capacity}
+    """
+    memberships = {}
+
+    try:
+        context = {'ignore_auth': True}
+        data_dict = {'id': user.name}
+
+        user_data = tk.get_action('user_show')(context, data_dict)
+
+        for org in user_data.get('organizations', []):
+            org_name = org.get('name')
+            capacity = org.get('capacity')
+            if org_name and capacity:
+                memberships[org_name] = capacity
+
+        log.info(f"📋 [ORG CURRENT] Current organization memberships for '{user.name}': {memberships}")
+
+    except Exception as e:
+        log.error(f"❌ [ORG CURRENT] Failed to fetch organization memberships for '{user.name}': {e}")
+
+    return memberships
+
+def _remove_user_from_organization(user, org_name):
+    """
+    Remove a user from a CKAN organization.
+    """
+    try:
+        context = {
+            'ignore_auth': True,
+            'user': user.name,
+            'auth_user_obj': user
+        }
+
+        data_dict = {
+            'id': org_name,
+            'object': user.name,
+            'object_type': 'user'
+        }
+
+        tk.get_action('member_delete')(context, data_dict)
+
+        log.info(f"🗑️ [ORG REMOVE] Removed user '{user.name}' from organization '{org_name}'")
+
+    except Exception as e:
+        log.error(
+            f"❌ [ORG REMOVE] Failed to remove user '{user.name}' from organization '{org_name}': {e}"
+        )
+
 
 def _get_user_by_email(email):
     user = model.User.by_email(email)
@@ -182,19 +236,18 @@ def sync_user_organizations(user, organization_roles):
             }
 
     Behavior:
-    - Invalid input is ignored safely
+    - Adds missing memberships
+    - Updates changed roles
+    - Removes old memberships that were previously managed by Keycloak
+      but are no longer present in Keycloak
     - Missing organizations do not crash the app
-    - Unknown roles are ignored
-    - Only adds/updates memberships for organizations present in organization_roles
-    - Does NOT remove memberships from other organizations
     """
     if not user:
         log.warning("⚠️ [ORG SYNC] No user provided, skipping organization sync")
         return
 
-    if not organization_roles:
-        log.info(f"ℹ️ [ORG SYNC] No organization roles to sync for user '{user.name}'")
-        return
+    if organization_roles is None:
+        organization_roles = {}
 
     if not isinstance(organization_roles, dict):
         log.warning(
@@ -204,23 +257,45 @@ def sync_user_organizations(user, organization_roles):
 
     allowed_roles = {'admin', 'editor', 'member'}
 
-    for org_name, capacity in organization_roles.items():
+    desired_roles = {
+        org_name: capacity
+        for org_name, capacity in organization_roles.items()
+        if isinstance(org_name, str) and capacity in allowed_roles
+    }
+
+    current_roles = _get_user_organization_memberships(user)
+
+    # Remove memberships that exist in CKAN but no longer exist in Keycloak desired roles
+    for org_name in current_roles:
+        if org_name not in desired_roles:
+            log.info(
+                f"🧹 [ORG SYNC] User '{user.name}' should no longer be in organization '{org_name}', removing membership"
+            )
+            _remove_user_from_organization(user, org_name)
+
+    # Add or update desired memberships
+    for org_name, capacity in desired_roles.items():
         try:
-            if not org_name or not isinstance(org_name, str):
-                log.warning(f"⚠️ [ORG SYNC] Invalid organization name ignored: {org_name}")
-                continue
-
-            if capacity not in allowed_roles:
-                log.warning(
-                    f"⚠️ [ORG SYNC] Invalid capacity '{capacity}' for organization '{org_name}', skipping"
-                )
-                continue
-
             if not _organization_exists(org_name):
                 log.warning(
                     f"⚠️ [ORG SYNC] Skipping membership sync because organization '{org_name}' does not exist"
                 )
                 continue
+
+            current_capacity = current_roles.get(org_name)
+
+            if current_capacity == capacity:
+                log.info(
+                    f"✅ [ORG SYNC] User '{user.name}' already has correct role '{capacity}' in '{org_name}'"
+                )
+                continue
+
+            # If role changed, remove old membership first
+            if current_capacity:
+                log.info(
+                    f"🔄 [ORG SYNC] Updating user '{user.name}' in '{org_name}' from '{current_capacity}' to '{capacity}'"
+                )
+                _remove_user_from_organization(user, org_name)
 
             _add_or_update_user_organization_role(user, org_name, capacity)
 
