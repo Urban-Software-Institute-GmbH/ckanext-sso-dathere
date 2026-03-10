@@ -136,10 +136,6 @@ class SSOClient(object):
             if self.client_id in resource_access:
                 client_roles = resource_access[self.client_id].get("roles", [])
 
-            log.info(
-                f"👤 [KEYCLOAK ROLES] Extracted client roles for '{self.client_id}': {client_roles}"
-            )
-
         except Exception as e:
             log.error(f"❌ [KEYCLOAK ROLES] Unexpected error while extracting client roles: {e}")
 
