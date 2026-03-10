@@ -132,8 +132,7 @@ def _organization_exists(org_name):
 
 def _get_user_organization_memberships(user):
     """
-    Fetch all current CKAN organization memberships for the user directly
-    from CKAN's model tables.
+    Fetch all current CKAN organization memberships for the user.
 
     Returns:
         dict: {org_name: capacity}
@@ -149,7 +148,9 @@ def _get_user_organization_memberships(user):
             .all()
         )
 
-        log.info(f"🧾 [ORG CURRENT RAW] Found {len(member_rows)} active member rows for user '{user.name}'")
+        log.info(
+            f"🧾 [ORG CURRENT RAW] Found {len(member_rows)} active user-member rows for user '{user.name}'"
+        )
 
         for member in member_rows:
             try:
@@ -161,7 +162,6 @@ def _get_user_organization_memberships(user):
                     )
                     continue
 
-                # Only keep organizations
                 if getattr(group, 'type', None) != 'organization':
                     log.info(
                         f"ℹ️ [ORG CURRENT SKIP] Skipping non-organization group '{group.name}' "
@@ -193,9 +193,7 @@ def _remove_user_from_organization(user, org_name):
     """
     try:
         context = {
-            'ignore_auth': True,
-            'user': user.name,
-            'auth_user_obj': user
+            'ignore_auth': True
         }
 
         data_dict = {
@@ -220,9 +218,7 @@ def _add_user_to_organization(user, org_name, capacity):
     """
     try:
         context = {
-            'ignore_auth': True,
-            'user': user.name,
-            'auth_user_obj': user
+            'ignore_auth': True
         }
 
         data_dict = {
