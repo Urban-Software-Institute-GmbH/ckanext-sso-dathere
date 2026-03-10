@@ -242,7 +242,6 @@ class SSOClient(object):
 
                 if org_name not in org_roles:
                     org_roles[org_name] = group_role
-                    log.info(f"🏢 [ORG ROLE ADD] {org_name} -> {group_role}")
                 else:
                     current_group_role = org_roles[org_name]
                     current_priority = role_priority[current_group_role]
@@ -266,7 +265,6 @@ class SSOClient(object):
             for org_name, group_role in org_roles.items()
         }
 
-        log.info(f"✅ [FINAL ORG ROLES] Resolved organization roles: {final_roles}")
         return final_roles
 
     def extract_organization_roles_from_token(self, token_response):

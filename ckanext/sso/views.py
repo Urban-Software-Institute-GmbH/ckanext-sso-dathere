@@ -127,7 +127,6 @@ def dashboard():
         return tk.redirect_to(tk.url_for('user.login'))
 
     log.info(f"👤 [AUTH] User authenticated with client roles: {client_roles}")
-    log.info(f"🏢 [AUTH] Resolved organization roles: {organization_roles}")
     log.debug(f"🧾 [AUTH] Full userinfo: {userinfo}")
 
     if not userinfo or 'email' not in userinfo:

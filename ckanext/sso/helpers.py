@@ -148,9 +148,6 @@ def _get_user_organization_memberships(user):
             .all()
         )
 
-        log.info(
-            f"🧾 [ORG CURRENT RAW] Found {len(member_rows)} active user-member rows for user '{user.name}'"
-        )
 
         for member in member_rows:
             try:
@@ -171,10 +168,6 @@ def _get_user_organization_memberships(user):
 
                 memberships[group.name] = member.capacity
 
-                log.info(
-                    f"🏢 [ORG CURRENT ADD] User '{user.name}' is currently '{member.capacity}' "
-                    f"in organization '{group.name}'"
-                )
 
             except Exception as inner_e:
                 log.error(f"❌ [ORG CURRENT ITEM] Error processing membership row: {inner_e}")
@@ -204,7 +197,7 @@ def _remove_user_from_organization(user, org_name):
 
         tk.get_action('member_delete')(context, data_dict)
 
-        log.info(f"🗑️ [ORG REMOVE] Removed user '{user.name}' from organization '{org_name}'")
+    #    log.info(f"🗑️ [ORG REMOVE] Removed user '{user.name}' from organization '{org_name}'")
 
     except Exception as e:
         log.error(
@@ -285,10 +278,10 @@ def sync_user_organizations(user, organization_roles):
 
     current_roles = _get_user_organization_memberships(user)
 
-    log.info(f"📋 [ORG SYNC CURRENT] CKAN current roles for '{user.name}': {current_roles}")
+  #  log.info(f"📋 [ORG SYNC CURRENT] CKAN current roles for '{user.name}': {current_roles}")
     log.info(f"📋 [ORG SYNC DESIRED] Keycloak desired roles for '{user.name}': {desired_roles}")
 
-    log.info(f"📋 [ORG SYNC] Desired Keycloak roles for '{user.name}': {desired_roles}")
+
 
     all_orgs = set(current_roles.keys()) | set(desired_roles.keys())
 
