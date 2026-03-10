@@ -25,7 +25,7 @@ To manage sysadmins in CKAN, we use Role Mapping.
 
 To manage roles inside the organisation (admin, member, editor), we use groups.
 
-Scroll down to Manage Sysadmins in Keycloak and Manage CKAN User Organisation Roles in Keycloak.
+Scroll down to [Manage Sysadmins](#10-how-to-manage-ckan-global-admin-users-in-keycloak)  and [Manage CKAN User Organisation Roles](#11-how-to-manage-organisation-members-and-their-roles-admin-editor-and-member) in Keycloak.
 
 
 ### 2. Introduction
