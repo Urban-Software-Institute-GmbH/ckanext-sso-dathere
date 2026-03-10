@@ -9,7 +9,8 @@
 7. [Contributing](#7-contributing)
 8. [License](#8-license)
 9. [Contact](#9-contact)
-10. [Setup Keycloak](#10-setup-keycloak)
+10. [How to Manage CKAN Global Admin Users in Keycloak](#10-how-to-manage-ckan-global-admin-users-in-keycloak)
+11. [How to Manage Organisation Members and Their Roles (Admin, Editor, Member)](#11-how-to-manage-organisation-members-and-their-roles-admin-editor-and-member)
 
 
 
@@ -18,13 +19,13 @@
 
 ### 1. Forking explained
 
- 🚨🚨 The main reason for forking ckanext-sso-dathere is to enable admin management directly within Keycloak. While ckanext-sso-dathere works well with Keycloak, as of February 2026 it does not provide the ability to manage CKAN administrators from within Keycloak.
+🚨🚨 We forked ckanext-sso-dathere for two reasons. The first is to enable sysadmin management directly within Keycloak. The second reason is to manage user roles (admins, editors, and members) within the organisation.
 
-This forked plugin uses Role Mapping to assign or remove admin roles for users.
+To manage sysadmins in CKAN, we use Role Mapping.
 
-Scroll to Setup Keycloak
- to learn how to configure your Keycloak. 🚨🚨
+To manage roles inside the organisation (admin, member, editor), we use groups.
 
+Scroll down to [Manage Sysadmins](#10-how-to-manage-ckan-global-admin-users-in-keycloak)  and [Manage CKAN User Organisation Roles](#11-how-to-manage-organisation-members-and-their-roles-admin-editor-and-member) in Keycloak.
 
 
 ### 2. Introduction
@@ -88,7 +89,7 @@ This project is licensed under the terms of the [MIT License](LICENSE).
 If you have any questions, please feel free to reach out to us at [
 datHere Support](mailto:<support@dathere.com>).
 
-### 10. Setup Keycloak
+### 10. How to Manage CKAN Global Admin Users in Keycloak
 
 a- Create a normal OpenID Connect client.
 
@@ -102,8 +103,42 @@ c- Define the roles. Go to Clients → <your-ckan-client> → Roles → Create R
 
 d- Now you are ready to make any user an admin. Go to: Users → <your-user> → Role Mapping → <your-client-admin-role>. Then log in again.
 
-
 ![Alt text](images/keycloak-users-role-mapping.jpg)
+
+### 11. How to manage organisation members and their roles (admin, editor and member)
+
+As we know, in CKAN we can manage the members of the groups and their roles inside the group directly from within CKAN. However, we want to make Keycloak the single source of truth to manage organisation members and their roles.
+
+a- The first thing we have to ensure is that the group list is sent with the token. Therefore, we need to create a client scope and assign it to the CKAN client.
+
+So click on **Client Scopes** → **Create Client Scope** → name it **ckan-groups**.
+
+![Alt text](images/create-client-groups-scope.png)
+
+
+Now we have to add a group mapper. Please click on **"Configure a new mapper"**.
+
+![Alt text](images/add-mappers-to-client-group-scope.jpg)
+
+Now choose **Group Membership** mapping, give it a name, and ensure that all the toggles **`Full group path`**, **`Add to ID token`**, and **`Add to access token`** are enabled.
+![Alt text](images/mapper-details.jpg)
+
+b- Now you can create groups, but there is a strict convention that you have to follow so that this feature works. When creating groups in Keycloak, please follow this convention:
+
+`/ckan/<organization-name>/admins`
+
+The organisation name is not the title but the organisation URL, as shown in the following picture.
+
+![Alt text](images/get-organisation-url.jpg)
+
+After that create a parent group in ckan with `ckan/<organization-name>` and the create 3 subgroups `admins, editors and members`  in plural exactly inside `ckan/<organization-name>` as shown in the following example:
+![Alt text](images/create-parent-organisation.jpg)
+
+![Alt text](images/create-suborganisations.jpg)
+
+![Alt text](images/final-result.jpg)
+
+
 
 
 
