@@ -39,9 +39,10 @@ def process_user(user_dict):
     """
     Process user info from SSO provider and create/update user in CKAN.
 
-    Note:
-    This function does NOT promote users to CKAN sysadmin.
-    Organization-level roles are handled separately via Keycloak groups.
+    Behavior:
+    - Create/update user
+    - Sync CKAN sysadmin from Keycloak client roles
+    - Organization-level roles are still handled separately
     """
     user = _get_user_by_email(user_dict.get('email'))
 
@@ -49,6 +50,9 @@ def process_user(user_dict):
         user = _update_user(user, user_dict)
     else:
         user = _create_user(user_dict)
+
+    # Restore CKAN sysadmin sync based on Keycloak client roles
+    _check_and_promote_to_admin(user, user_dict)
 
     return user
 
@@ -115,6 +119,64 @@ def _update_user(user, user_dict):
     return model.User.get(user.id)
 
 
+def _check_and_promote_to_admin(user, user_dict):
+    """
+    Check if user has an admin-like Keycloak client role
+    and sync CKAN sysadmin accordingly.
+
+    IMPORTANT:
+    - This only manages CKAN global sysadmin
+    - It does NOT touch organization memberships
+    """
+    if not user:
+        return
+
+    plugin_extras = user_dict.get('plugin_extras', {}) or {}
+    client_roles = plugin_extras.get('client_roles', []) or []
+
+    admin_roles = ['admin', 'administrator', 'sysadmin', 'ckan_admin', 'ckan-admin']
+
+    normalized_admin_roles = {role.lower() for role in admin_roles}
+    normalized_client_roles = {
+        str(role).strip().lower() for role in client_roles if str(role).strip()
+    }
+
+    has_admin_role = bool(normalized_client_roles & normalized_admin_roles)
+
+    if has_admin_role and not user.sysadmin:
+        _set_sysadmin(user, True)
+        log.info(
+            f"👑 [SYSADMIN] User '{user.name}' promoted to CKAN sysadmin "
+            f"based on Keycloak client roles {client_roles}"
+        )
+    elif not has_admin_role and user.sysadmin:
+        _set_sysadmin(user, False)
+        log.info(
+            f"⬇️ [SYSADMIN] User '{user.name}' demoted from CKAN sysadmin "
+            f"because no matching admin client role was found in {client_roles}"
+        )
+    elif has_admin_role and user.sysadmin:
+        log.info(
+            f"✅ [SYSADMIN] User '{user.name}' already has CKAN sysadmin privileges"
+        )
+    else:
+        log.info(
+            f"ℹ️ [SYSADMIN] User '{user.name}' does not have an admin client role"
+        )
+
+
+def _set_sysadmin(user, is_admin):
+    """Set or unset user as CKAN sysadmin."""
+    try:
+        user.sysadmin = is_admin
+        user.save()
+        model.Session.commit()
+        log.info(f"✅ [SYSADMIN] Set sysadmin={is_admin} for user {user.name}")
+    except Exception as e:
+        model.Session.rollback()
+        log.error(f"❌ [SYSADMIN] Error setting sysadmin for user {user.name}: {e}")
+
+
 def _organization_exists(org_name):
     """
     Check whether a CKAN organization exists.
@@ -148,7 +210,6 @@ def _get_user_organization_memberships(user):
             .all()
         )
 
-
         for member in member_rows:
             try:
                 group = model.Group.get(member.group_id)
@@ -167,7 +228,6 @@ def _get_user_organization_memberships(user):
                     continue
 
                 memberships[group.name] = member.capacity
-
 
             except Exception as inner_e:
                 log.error(f"❌ [ORG CURRENT ITEM] Error processing membership row: {inner_e}")
@@ -278,10 +338,7 @@ def sync_user_organizations(user, organization_roles):
 
     current_roles = _get_user_organization_memberships(user)
 
-  #  log.info(f"📋 [ORG SYNC CURRENT] CKAN current roles for '{user.name}': {current_roles}")
     log.info(f"📋 [ORG SYNC DESIRED] Keycloak desired roles for '{user.name}': {desired_roles}")
-
-
 
     all_orgs = set(current_roles.keys()) | set(desired_roles.keys())
 
